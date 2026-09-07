@@ -19,6 +19,12 @@ exec "nim c -r tests/markdowntest.nim"
 # And a markdown image line on a backend with no image relays -- which is what
 # X11 is, so this is the ordinary Linux case and not a corner of one.
 exec "nim c -r tests/mdimagetest.nim"
+# And the same line on a backend that has a surface but no decoder, which is
+# also what X11 is: the picture is decoded and scaled here and handed over as
+# pixels. The arithmetic that flattens transparency is checked a pixel at a
+# time, because a relay that drew nothing looks the same from outside as one
+# that drew the picture.
+exec "nim c -r tests/pixieimagetest.nim"
 # Bold and italics reach the drawing path through stub relays.
 exec "nim c -r tests/styletest.nim"
 # The word index needs no font until something draws with it.

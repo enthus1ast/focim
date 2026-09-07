@@ -17,7 +17,12 @@ requires "https://github.com/nim-lang/uirelays >= 0.11.0"
 # below makes the build inputs with it and `bundle` hands the built editor to
 # the desktop; the release workflow uses it for both.
 requires "https://github.com/Araq/iconbundler >= 0.1.0"
-# Neither is on the Nimble package list yet, hence the URLs.
+# Decoding a PNG is not a driver's job -- see `src/focim/images.nim`, which
+# fills in the image relays over the one thing the driver does offer for it.
+# PNG, JPEG, GIF, BMP, QOI and SVG all arrive with this, and the scaling that
+# makes a photo fit a column arrives with it too.
+requires "pixie >= 6.1.0"
+# The first two are not on the Nimble package list yet, hence the URLs.
 
 const
   IconArt = "src/focim-icon.png"
