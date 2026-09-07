@@ -2770,11 +2770,32 @@ proc renderMarkdownImageLine(
   if maxW <= 16 or maxH < lineH:
     return
 
-  let imgH = min(max(lineH * 6, lineH * 2), maxH)
-  let dst = rect(dim.x, dim.y + 1, maxW, imgH)
   let img = s.getCachedImage(imgPath)
+  let (iw, ih) = imageSize(img)
+  var imgW = maxW
+  var imgH = min(max(lineH * 6, lineH * 2), maxH)
+  if iw > 0 and ih > 0:
+    # The picture's own size, shrunk -- never stretched -- to what the column
+    # and the rest of the panel have room for. A 32-pixel icon stays a
+    # 32-pixel icon; a photo off a phone is as wide as there is room for and
+    # as tall as that width makes it. Which is what a browser does with the
+    # same line, and the reason a picture in a `.md` file looks like the
+    # picture rather than like a band of it.
+    imgW = min(maxW, iw)
+    imgH = max(1, (imgW * ih + iw div 2) div iw)
+    if imgH > maxH:
+      imgH = maxH
+      imgW = max(1, (imgH * iw + ih div 2) div ih)
+  let dst = rect(dim.x, dim.y + 1, imgW, imgH)
   if img != Image(0):
-    drawImage(img, rect(0, 0, dst.w, dst.h), dst)
+    # The source rectangle is in the picture's own pixels, so "all of it" is
+    # its own size -- not the size of the hole it is going into, which is a
+    # different rectangle that happens to also be a rectangle. A driver that
+    # cannot say how big a picture is gets asked the old way and answers by
+    # cropping, which is at least a picture.
+    let srcRect = if iw > 0 and ih > 0: rect(0, 0, iw, ih)
+                  else: rect(0, 0, dst.w, dst.h)
+    drawImage(img, srcRect, dst)
   else:
     # Backends without image relays still show a useful placeholder.
     fillRect(dst, color(52, 56, 64))

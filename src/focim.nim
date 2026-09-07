@@ -200,6 +200,7 @@ import focim/track
 import focim/configstore
 import focim/completion
 import focim/panels
+import focim/images
 
 # Derived from focim-icon.png by `iconbundler --prepare focim`.
 when defined(windows):
@@ -2033,6 +2034,13 @@ proc main =
   var height = screen.height
   gUiScale = screen.uiScale
 
+  # Markdown shows pictures, and on X11 the driver has no idea how to decode
+  # one -- it offers somewhere to put pixels and nothing else. This is what
+  # fills that in, and it does nothing at all on a backend that already draws
+  # pictures. It goes after the window because there is no surface to ask
+  # about before there is one.
+  installPixieImages()
+
   var fonts: Table[int, Font]
   let font = fonts.fontForSize(DefaultFontSize)
   var fm = getFontMetrics(font)
@@ -2309,6 +2317,12 @@ proc main =
     # the seams before it can find the text.
     var panelTheme = theme
     panelTheme.bg = theme.panelBg
+    # A picture with transparency in it has to be resolved against something,
+    # and the something is the color the row behind it was painted with. It
+    # goes out with the theme and for the theme's reason: it can change with
+    # any keystroke in the config tab, and a picture still showing the last
+    # theme's background would be the one thing on screen that did not follow.
+    setImageBackdrop theme.bg
     history.theme = panelTheme
     tabs.ed.theme = panelTheme
     explorer.ed.theme = panelTheme

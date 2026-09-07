@@ -13,6 +13,7 @@ import focim/[synedit, theme]
 
 var asked: seq[string]     ## paths loadImage was called with
 var painted = 0            ## how often drawImage was called
+var lastSrc, lastDst: Rect ## the rectangles of the last drawImage
 
 fontRelays = FontRelays(
   openFont: proc (path: string; size: int; style: FontStyles;
@@ -79,7 +80,10 @@ drawRelays.loadImage = proc (path: string): Image =
   asked.add path
   Image(1)
 drawRelays.freeImage = proc (img: Image) = discard
-drawRelays.drawImage = proc (img: Image; src, dst: Rect) = inc painted
+drawRelays.drawImage = proc (img: Image; src, dst: Rect) =
+  inc painted
+  lastSrc = src
+  lastDst = dst
 ed = drawDoc()
 check "the picture is asked for", asked.len > 0,
   "loadImage was not called"
@@ -87,6 +91,35 @@ check "by the path the line names", asked.len > 0 and
   asked[0] == "screenshots/focim.png", "asked for: " & $asked
 check "asked once and then cached", asked.len == 1, "asked " & $asked.len & " times"
 check "and drawn", painted > 0
+# A driver that cannot say how big a picture is gets asked the only way that
+# is left: the source rectangle is the hole the picture is going into, and
+# the driver crops. It is the wrong picture, and it is the best that can be
+# asked for without `imageSize` -- which is why the next block exists.
+check "a driver that cannot be asked its size is asked the old way",
+  lastSrc.w == lastDst.w and lastSrc.h == lastDst.h,
+  "src " & $lastSrc & " dst " & $lastDst
+
+echo "with a driver that can say how big the picture is:"
+# Smaller than the column it goes in, so there is one right answer and no
+# rounding anywhere near it: a 40x20 picture is drawn 40x20. Stretching it to
+# the width of the panel would be the old bug, and so would 40x120 -- the
+# fixed six-line height that every picture used to get.
+drawRelays.imageSize = proc (img: Image): tuple[w, h: int] = (40, 20)
+painted = 0
+ed = drawDoc()
+check "the whole of it is asked for, in its own pixels",
+  lastSrc == rect(0, 0, 40, 20), $lastSrc
+check "a picture smaller than the column is drawn at its own size",
+  lastDst.w == 40 and lastDst.h == 20, $lastDst
+
+echo "and a picture too big for the column:"
+drawRelays.imageSize = proc (img: Image): tuple[w, h: int] = (4000, 1000)
+painted = 0
+ed = drawDoc()
+check "is brought down to fit it", lastDst.w < Area.w, $lastDst
+check "keeping its shape", abs(lastDst.h - lastDst.w div 4) <= 1, $lastDst
+check "and is still asked for whole", lastSrc == rect(0, 0, 4000, 1000),
+  $lastSrc
 
 if failures > 0: quit "FAILURE " & $failures & " check(s)"
 echo "ALL PASS"
