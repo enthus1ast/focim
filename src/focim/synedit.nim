@@ -374,16 +374,28 @@ proc len*(s: SynEdit): int {.inline.} = s.front.len + s.back.len
 
 template ones(n: untyped): untyped = ((1 shl n) - 1)
 
+proc leadLen(ch: char): int =
+  ## How many bytes a rune that starts with `ch` announces.
+  if ord(ch) <=% 127: 1
+  elif ord(ch) shr 5 == 0b110: 2
+  elif ord(ch) shr 4 == 0b1110: 3
+  elif ord(ch) shr 3 == 0b11110: 4
+  elif ord(ch) shr 2 == 0b111110: 5
+  elif ord(ch) shr 1 == 0b1111110: 6
+  else: 1
+
 proc graphemeLen(s: SynEdit; i: Natural): Positive =
+  ## Bytes of the rune that starts at `i`. A lead byte only leads a rune when
+  ## the continuation bytes it announces are there: in a Latin-1 file an 'ä'
+  ## is 0xE4, which has the shape of a three byte lead, and taking that at its
+  ## word would walk the cursor over the two characters behind it.
   result = 1
   if i >= s.len: return
-  let ch = s[i]
-  if ord(ch) <=% 127: return
-  elif ord(ch) shr 5 == 0b110: result = 2
-  elif ord(ch) shr 4 == 0b1110: result = 3
-  elif ord(ch) shr 3 == 0b11110: result = 4
-  elif ord(ch) shr 2 == 0b111110: result = 5
-  elif ord(ch) shr 1 == 0b1111110: result = 6
+  let L = leadLen(s[i])
+  if i + L > s.len: return
+  for k in 1 ..< L:
+    if ord(s[i + k]) shr 6 != 0b10: return
+  result = L
 
 proc lastRuneLen(s: SynEdit; last: int): int =
   ## Bytes of the rune that *ends* at `last` -- so `last` is the last byte of

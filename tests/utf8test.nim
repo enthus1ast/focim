@@ -161,5 +161,29 @@ block:
          afterKeys("a\x80\x80b", 3, KeyBackspace, 2), "ab")
   equals("a rune cut short by the end of the buffer",
          afterKeys("ab\xE2\x80", 4, KeyBackspace), "ab\xE2")
+  # Latin-1 writes 'ä' as 0xE4, which has the bit pattern of a lead byte that
+  # announces three. The bytes behind it are no continuation, so it is one
+  # character and the ones after it are characters of their own.
+  equals("a stray lead byte is deleted alone",
+         afterKeys("j\xE4h x", 1, KeyDelete), "jh x")
+  equals("and does not take its neighbours along",
+         afterKeys("j\xE4h x", 1, KeyDelete, 2), "j x")
+  var ed = buffer("j\xE4h x", 0)
+  ed.press(KeyRight)
+  ed.press(KeyRight)
+  check("Right steps over it one byte at a time", ed.cursor == 2, $ed.cursor)
+
+# ---------------------------------------------------------------------------
+echo "typed text:"
+# ---------------------------------------------------------------------------
+
+block:
+  var ed = buffer("ab", 1)
+  var e = Event(kind: TextInputEvent)
+  e.text[0] = '\xC3'
+  e.text[1] = '\xA4'
+  discard ed.draw(e, Area, focused = true)
+  equals("an umlaut goes in as UTF-8", ed.fullText, "a\xC3\xA4b")
+  check("with the caret behind all of it", ed.cursor == 3, $ed.cursor)
 
 quit(if failures > 0: 1 else: 0)
