@@ -3227,6 +3227,14 @@ proc drawTextLine(s: var SynEdit; i: int; dim: var Rect; blink: bool): int =
             s.setCurrentLine()
             s.clicks = 0
             s.cursorMoved()
+            if s.mouseDragging:
+              if s.dragStartPos < 0:
+                s.dragStartPos = s.cursor.int
+              else:
+                let a = min(s.dragStartPos, s.cursor.int)
+                let b = max(s.dragStartPos, s.cursor.int)
+                if a == b: s.selected = (a, -1)
+                else: s.selected = (a, b - 1)
           break outerLoop
         if cell.s != tokenClass or s.getBg(db.i) != styleBg:
           break
