@@ -2098,6 +2098,31 @@ proc insertEnter(s: var SynEdit; smartIndent = true) =
   s.insertNoSelect(toInsert, singleUndoOp = true)
   s.cursorMoved()
 
+proc deleteWordLeft*(s: var SynEdit) =
+  ## Delete the word behind the cursor as one undo step -- Ctrl+Backspace.
+  ## With a selection, just removes the selection, like a plain Backspace.
+  inc s.version
+  if s.hasSelection():
+    s.removeSelectedText()
+  elif s.cursor > 0:
+    s.deselect()
+    s.selectLeft(jump = true)
+    s.removeSelectedText()
+  s.cursorMoved()
+
+proc deleteWordRight*(s: var SynEdit) =
+  ## Delete the word ahead of the cursor as one undo step -- Ctrl+Delete.
+  ## With a selection, just removes the selection, like a plain Delete.
+  inc s.version
+  if s.hasSelection():
+    s.removeSelectedText()
+  elif s.cursor.int < s.len:
+    s.deselect()
+    s.selectRight(jump = true)
+    s.removeSelectedText()
+  s.cursorMoved()
+
+
 proc indent(s: var SynEdit) =
   inc s.version
   if s.selected.b < 0:
@@ -3227,6 +3252,14 @@ proc drawTextLine(s: var SynEdit; i: int; dim: var Rect; blink: bool): int =
             s.setCurrentLine()
             s.clicks = 0
             s.cursorMoved()
+            if s.mouseDragging:
+              if s.dragStartPos < 0:
+                s.dragStartPos = s.cursor.int
+              else:
+                let a = min(s.dragStartPos, s.cursor.int)
+                let b = max(s.dragStartPos, s.cursor.int)
+                if a == b: s.selected = (a, -1)
+                else: s.selected = (a, b - 1)
           break outerLoop
         if cell.s != tokenClass or s.getBg(db.i) != styleBg:
           break
@@ -3638,9 +3671,11 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
       of KeyPageDown:
         s.deselect(); s.pageDown()
       of KeyBackspace:
-        s.backspace(smartIndent = not ctrl)
+        if ctrl: s.deleteWordLeft()
+        else: s.backspace(smartIndent = true)
       of KeyDelete:
-        s.deleteKey()
+        if ctrl: s.deleteWordRight()
+        else: s.deleteKey()
       of KeyEnter:
         s.insertEnter(smartIndent = true)
       of KeyTab:
@@ -3702,15 +3737,13 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
       s.probeY = e.y
       s.probeActive = true
       s.probeResult = -1
-      if s.mouseDragging:
-        s.mouseX = e.x
-        s.mouseY = e.y
-        s.clicks = 1
     else:
       s.probeActive = false
       s.probeResult = -1
-      if s.mouseDragging:
-        s.mouseDragging = false
+    if s.mouseDragging:
+      s.mouseX = e.x
+      s.mouseY = e.y
+      s.clicks = 1
     if s.scrollGrabbed and hasScrollBar:
       let trackH = float(area.h - 2)
       let totalLines = s.numberOfLines.int + s.span
