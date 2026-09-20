@@ -2098,6 +2098,31 @@ proc insertEnter(s: var SynEdit; smartIndent = true) =
   s.insertNoSelect(toInsert, singleUndoOp = true)
   s.cursorMoved()
 
+proc deleteWordLeft*(s: var SynEdit) =
+  ## Delete the word behind the cursor as one undo step -- Ctrl+Backspace.
+  ## With a selection, just removes the selection, like a plain Backspace.
+  inc s.version
+  if s.hasSelection():
+    s.removeSelectedText()
+  elif s.cursor > 0:
+    s.deselect()
+    s.selectLeft(jump = true)
+    s.removeSelectedText()
+  s.cursorMoved()
+
+proc deleteWordRight*(s: var SynEdit) =
+  ## Delete the word ahead of the cursor as one undo step -- Ctrl+Delete.
+  ## With a selection, just removes the selection, like a plain Delete.
+  inc s.version
+  if s.hasSelection():
+    s.removeSelectedText()
+  elif s.cursor.int < s.len:
+    s.deselect()
+    s.selectRight(jump = true)
+    s.removeSelectedText()
+  s.cursorMoved()
+
+
 proc indent(s: var SynEdit) =
   inc s.version
   if s.selected.b < 0:
@@ -3646,9 +3671,11 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
       of KeyPageDown:
         s.deselect(); s.pageDown()
       of KeyBackspace:
-        s.backspace(smartIndent = not ctrl)
+        if ctrl: s.deleteWordLeft()
+        else: s.backspace(smartIndent = true)
       of KeyDelete:
-        s.deleteKey()
+        if ctrl: s.deleteWordRight()
+        else: s.deleteKey()
       of KeyEnter:
         s.insertEnter(smartIndent = true)
       of KeyTab:
