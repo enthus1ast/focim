@@ -3702,15 +3702,13 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
       s.probeY = e.y
       s.probeActive = true
       s.probeResult = -1
-      if s.mouseDragging:
-        s.mouseX = e.x
-        s.mouseY = e.y
-        s.clicks = 1
     else:
       s.probeActive = false
       s.probeResult = -1
-      if s.mouseDragging:
-        s.mouseDragging = false
+    if s.mouseDragging:
+      s.mouseX = e.x
+      s.mouseY = e.y
+      s.clicks = 1
     if s.scrollGrabbed and hasScrollBar:
       let trackH = float(area.h - 2)
       let totalLines = s.numberOfLines.int + s.span
