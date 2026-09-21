@@ -2073,31 +2073,6 @@ proc deleteKey(s: var SynEdit) =
     s.removeSelectedText()
   s.cursorMoved()
 
-proc insertEnter(s: var SynEdit; smartIndent = true) =
-  var i = s.cursor.int
-  var inComment = false
-  while i >= 1:
-    case s[i-1]
-    of '\L': break
-    of '#': (if s.lang == langNim: inComment = true)
-    else: discard
-    dec i
-  var toInsert = "\L"
-  if smartIndent:
-    while true:
-      let c = s[i]
-      if c == ' ' or c == '\t': toInsert.add c
-      else: break
-      inc i
-    var last = s.cursor.int - 1
-    while last > 0 and s[last] == ' ': dec last
-    if last >= 0 and s[last] in additionalIndentChars[s.lang] and not inComment:
-      for j in 1..s.tabSize: toInsert.add ' '
-  inc s.version
-  s.removeSelectedText()
-  s.insertNoSelect(toInsert, singleUndoOp = true)
-  s.cursorMoved()
-
 proc deleteWordLeft*(s: var SynEdit) =
   ## Delete the word behind the cursor as one undo step -- Ctrl+Backspace.
   ## With a selection, just removes the selection, like a plain Backspace.
@@ -2122,6 +2097,30 @@ proc deleteWordRight*(s: var SynEdit) =
     s.removeSelectedText()
   s.cursorMoved()
 
+proc insertEnter(s: var SynEdit; smartIndent = true) =
+  var i = s.cursor.int
+  var inComment = false
+  while i >= 1:
+    case s[i-1]
+    of '\L': break
+    of '#': (if s.lang == langNim: inComment = true)
+    else: discard
+    dec i
+  var toInsert = "\L"
+  if smartIndent:
+    while true:
+      let c = s[i]
+      if c == ' ' or c == '\t': toInsert.add c
+      else: break
+      inc i
+    var last = s.cursor.int - 1
+    while last > 0 and s[last] == ' ': dec last
+    if last >= 0 and s[last] in additionalIndentChars[s.lang] and not inComment:
+      for j in 1..s.tabSize: toInsert.add ' '
+  inc s.version
+  s.removeSelectedText()
+  s.insertNoSelect(toInsert, singleUndoOp = true)
+  s.cursorMoved()
 
 proc indent(s: var SynEdit) =
   inc s.version
@@ -2230,6 +2229,21 @@ proc getLineText*(s: SynEdit; lineIdx: int): string =
   let start = s.getLineOffset(lineIdx)
   var i = start
   while i < s.len and s[i] != '\L': inc i
+  result = newStringOfCap(i - start)
+  for j in start ..< i: result.add s[j]
+
+proc getLineTextWithNewline(s: SynEdit; lineIdx: int): string =
+  ## Like `getLineText`, but keeps the line's own trailing newline when there
+  ## is one -- what cutting or copying a line wants on the clipboard, so
+  ## pasting it back elsewhere doesn't run into the following line. The last
+  ## line of the buffer has no newline of its own, and this returns none for
+  ## it either -- matching what `deleteLine` actually removes for that line
+  ## (the newline in front of it instead), so cut/copy and paste stay
+  ## consistent at that edge.
+  let start = s.getLineOffset(lineIdx)
+  var i = start
+  while i < s.len and s[i] != '\L': inc i
+  if i < s.len: inc i  # include the newline, when there is one
   result = newStringOfCap(i - start)
   for j in start ..< i: result.add s[j]
 
@@ -3329,16 +3343,27 @@ proc mouseSelectCurrentToken(s: var SynEdit) =
   s.cursorMoved()
 
 proc mouseSelectWholeLine(s: var SynEdit) =
+  ## Select the whole line the cursor landed on -- what a triple-click asks
+  ## for. Mirrors the extent selectLine (the keyboard equivalent) uses: from
+  ## the start of the line to its end, not merely up to the clicked column.
   var first = s.cursor.int
   while first > 0 and s[first - 1] != '\L': dec first
-  s.selected = (first, s.cursor.int)
-  s.clicks = 0
+  var last = first
+  while last < s.len and s[last] != '\L': inc last
+  s.cursor = last.Natural
+  s.setCurrentLine()
+  if last > first:
+    s.selected = (first, last - 1)
+  else:
+    s.selected = (first, -1)   # an empty line has nothing to select
+  s.desiredCol = s.getColumn().Natural
 
-proc setCursorFromMouse(s: var SynEdit; x, y, clickCount: int) =
+proc setCursorFromMouse(s: var SynEdit; x, y, clickCount: int;
+                        preserveSelection = false) =
   s.mouseX = x
   s.mouseY = y
   s.clicks = clickCount
-  if clickCount < 2 and not s.mouseDragging:
+  if clickCount < 2 and not s.mouseDragging and not preserveSelection:
     s.selected.b = -1
 
 # ---------------------------------------------------------------------------
@@ -3620,6 +3645,8 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
       s.closeButtonHit(area, e.x, e.y)
     else: -1
   if e.kind == MouseMoveEvent: s.closeHover = closeHit
+  var pendingWordSelect = false
+  var pendingLineSelect = false
 
   case e.kind
   of TextInputEvent:
@@ -3691,14 +3718,24 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
         if ctrl: s.redo()
       of KeyC:
         if ctrl:
-          let text = s.getSelectedText()
-          if text.len > 0: putClipboardText(text)
+          if s.hasSelection():
+            let text = s.getSelectedText()
+            if text.len > 0: putClipboardText(text)
+          else:
+            let text = s.getLineTextWithNewline(s.currentLine.int)
+            if text.len > 0: putClipboardText(text)
       of KeyX:
         if ctrl:
-          let text = s.getSelectedText()
-          if text.len > 0:
-            putClipboardText(text)
-            s.removeSelectedText()
+          if s.hasSelection():
+            let text = s.getSelectedText()
+            if text.len > 0:
+              putClipboardText(text)
+              s.removeSelectedText()
+          else:
+            let text = s.getLineTextWithNewline(s.currentLine.int)
+            if text.len > 0:
+              putClipboardText(text)
+              s.deleteLine()
       of KeyV:
         if ctrl:
           let text = getClipboardText()
@@ -3706,6 +3743,7 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
       else: discard
 
   of MouseDownEvent:
+    let shift = ShiftPressed in e.mods
     if hasScrollBar and grip.contains(point(e.x, e.y)):
       s.scrollGrabbed = true
       s.scrollGrabOffset = e.y - grip.y
@@ -3718,10 +3756,21 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
         s.setCursorFromMouse(e.x, e.y, 1)
       elif e.clicks >= 3:
         s.setCursorFromMouse(e.x, e.y, 1)
-        s.mouseSelectWholeLine()
+        pendingLineSelect = true
       elif e.clicks == 2:
         s.setCursorFromMouse(e.x, e.y, 1)
-        s.mouseSelectCurrentToken()
+        pendingWordSelect = true
+      elif shift:
+        # Anchor the drag at where the caret already was, instead of at the
+        # click: this makes the click-and-every-later-move machinery below
+        # (drawSubtoken's per-token hit test, the end-of-line branch, and
+        # the end-of-buffer fallback in renderPass) build the selection from
+        # the old caret position to wherever the pointer goes, live, exactly
+        # like an ordinary drag.
+        let anchor = s.cursor.int
+        s.setCursorFromMouse(e.x, e.y, 1, preserveSelection = true)
+        s.mouseDragging = true
+        s.dragStartPos = anchor
       else:
         s.setCursorFromMouse(e.x, e.y, e.clicks)
         s.mouseDragging = true
@@ -3740,6 +3789,10 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
     else:
       s.probeActive = false
       s.probeResult = -1
+    # Drag-selection is independent of the Ctrl-hover probe above: as long as
+    # the button is down, every move updates where the pointer is so the next
+    # render pass can extend `selected` to it, regardless of modifiers.
+    # `mouseDragging` is only ever cleared by MouseUpEvent.
     if s.mouseDragging:
       s.mouseX = e.x
       s.mouseY = e.y
@@ -3772,6 +3825,11 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
 
   s.render(area, showCursor = focused)
 
+  if pendingLineSelect:
+    s.mouseSelectWholeLine()
+  elif pendingWordSelect:
+    s.mouseSelectCurrentToken()
+
   # After rendering, probe and click positions have been resolved.
   if e.kind == MouseDownEvent and (LinkMod in e.mods) and
      area.contains(point(e.x, e.y)):
@@ -3780,4 +3838,3 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
     result = EditAction(kind: ctrlHover, pos: s.probeResult)
   elif s.probeActive and s.probeResult < 0:
     discard
-
