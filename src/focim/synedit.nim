@@ -3761,13 +3761,28 @@ proc draw*(s: var SynEdit; e: Event; area: Rect; focused: bool): EditAction =
         s.setCursorFromMouse(e.x, e.y, 1)
         pendingWordSelect = true
       elif shift:
-        # Anchor the drag at where the caret already was, instead of at the
-        # click: this makes the click-and-every-later-move machinery below
-        # (drawSubtoken's per-token hit test, the end-of-line branch, and
-        # the end-of-buffer fallback in renderPass) build the selection from
-        # the old caret position to wherever the pointer goes, live, exactly
+        # Anchor the drag at the fixed end of the selection, instead of at
+        # the click: this makes the click-and-every-later-move machinery
+        # below (drawSubtoken's per-token hit test, the end-of-line branch,
+        # and the end-of-buffer fallback in renderPass) build the selection
+        # from that fixed point to wherever the pointer goes, live, exactly
         # like an ordinary drag.
-        let anchor = s.cursor.int
+        #
+        # With no selection yet, the caret itself is the anchor -- the
+        # ordinary start of a shift-click. With one already there, the
+        # cursor sits at one edge of it (every selecting operation, mouse or
+        # keyboard, leaves it there), so the *other* edge is the end that
+        # has not moved yet, and that is what a second, third, ... shift-
+        # click has to keep growing from. Using `s.cursor.int` again there,
+        # as before, would silently restart the selection at the last click
+        # instead of the original one, and would never let it flip back
+        # past its start when the pointer doubles back the other way.
+        let anchor =
+          if s.hasSelection():
+            if s.cursor.int == s.selected.a: s.selected.b + 1
+            else: s.selected.a
+          else:
+            s.cursor.int
         s.setCursorFromMouse(e.x, e.y, 1, preserveSelection = true)
         s.mouseDragging = true
         s.dragStartPos = anchor
